@@ -1,6 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import showdown from "showdown";
+
+// Inisialisasi converter markdown ke HTML
+const converter = new showdown.Converter({
+  tables: true,
+  strikethrough: true,
+  tasklists: true
+});
 
 // Tipe data pesan
 type Message = {
@@ -53,6 +61,138 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // The "under the hood" conversational history that we send to the LLM
+  // Includes tool calls and hidden system thinking
+  const [apiHistory, setApiHistory] = useState<any[]>([]);
+
+  const callAgent = async (currentHistory: any[]) => {
+    try {
+      // Tambahkan '?v=1' untuk memaksa Word Add-in mengunduh script JS Next.js yang baru (Bypass Cache)
+      const res = await fetch("/api/agent?action=chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: currentHistory }),
+      });
+
+      const data = await res.json();
+
+      if (data.type === 'success') {
+        // Agent is done
+        setMessages((prev) => [
+          ...prev, 
+          { id: Date.now().toString(), role: "agent", content: data.message }
+        ]);
+        
+        // Save to internal history
+        setApiHistory([
+            ...currentHistory, 
+            { role: 'assistant', content: JSON.stringify({ action: 'finish', args: { message: data.message } }) }
+        ]);
+        setIsLoading(false);
+        
+      } else if (data.type === 'action_required') {
+        const { tool, args, assistantLogs } = data;
+        let toolResult = "";
+
+        // UI Feedback that agent is doing something
+        if (tool === 'read_document') {
+           setMessages((prev) => [...prev, { id: Date.now().toString(), role: "agent", content: "👀 *Membaca isi dokumen Anda...*", isWritingInfo: true }]);
+           
+           if (typeof window !== "undefined" && window.Word) {
+             await window.Word.run(async (context: any) => {
+               const body = context.document.body;
+               body.load("text");
+               await context.sync();
+               toolResult = body.text || "[Dokumen Kosong]";
+             });
+           } else {
+             toolResult = "[Development Mode Error: Office.js tidak ditemukan]";
+           }
+
+        } else if (tool === 'edit_document') {
+           setMessages((prev) => [...prev, { id: Date.now().toString(), role: "agent", content: "✍️ *Menambahkan teks baru ke dokumen...*", isWritingInfo: true }]);
+           
+           if (typeof window !== "undefined" && window.Word) {
+             await window.Word.run(async (context: any) => {
+               const body = context.document.body;
+               const htmlString = converter.makeHtml(args.text);
+               body.insertHtml(htmlString, window.Word.InsertLocation.end);
+               await context.sync();
+               toolResult = "SUCCESS: Teks baru berhasil ditambahkan.";
+             });
+           } else {
+             toolResult = "SUCCESS (Simulated)";
+           }
+
+        } else if (tool === 'replace_text') {
+           setMessages((prev) => [...prev, { id: Date.now().toString(), role: "agent", content: "🔄 *Mengganti teks spesifik di dokumen...*", isWritingInfo: true }]);
+           
+           if (typeof window !== "undefined" && window.Word) {
+             await window.Word.run(async (context: any) => {
+               const searchResults = context.document.body.search(args.old_text, { matchCase: true });
+               context.load(searchResults, 'text');
+               await context.sync();
+               
+               if (searchResults.items.length === 0) {
+                 toolResult = `ERROR: Teks '${args.old_text}' tidak ditemukan persis di dokumen. Harap panggil 'read_document' lagi dan periksa kapitalisasinya!`;
+               } else {
+                 for (let i = 0; i < searchResults.items.length; i++) {
+                   searchResults.items[i].insertText(args.new_text, window.Word.InsertLocation.replace);
+                 }
+                 await context.sync();
+                 toolResult = `SUCCESS: Berhasil mengganti ${searchResults.items.length} kemunculan dari '${args.old_text}'.`;
+               }
+             });
+           } else {
+             toolResult = "SUCCESS (Simulated Replace)";
+           }
+
+        } else if (tool === 'delete_text') {
+           setMessages((prev) => [...prev, { id: Date.now().toString(), role: "agent", content: "🗑️ *Menghapus teks spesifik di dokumen...*", isWritingInfo: true }]);
+           
+           if (typeof window !== "undefined" && window.Word) {
+             await window.Word.run(async (context: any) => {
+               const searchResults = context.document.body.search(args.target_text, { matchCase: true });
+               context.load(searchResults, 'text');
+               await context.sync();
+               
+               if (searchResults.items.length === 0) {
+                 toolResult = `ERROR: Teks '${args.target_text}' tidak ditemukan persis di dokumen. Harap panggil 'read_document' lagi dan periksa kapitalisasinya!`;
+               } else {
+                 for (let i = 0; i < searchResults.items.length; i++) {
+                   searchResults.items[i].clear(); // Delete text
+                 }
+                 await context.sync();
+                 toolResult = `SUCCESS: Berhasil menghapus ${searchResults.items.length} kemunculan dari teks tersebut.`;
+               }
+             });
+           } else {
+             toolResult = "SUCCESS (Simulated Delete)";
+           }
+        }
+
+        // Attach tool result to conversation history for next Agent loop
+        const updatedHistory = [
+           ...currentHistory,
+           { role: 'assistant', content: assistantLogs }, // What it thought
+           { role: 'user', content: `SYSTEM (TOOL RESULT - ${tool}):\n${toolResult}` } // The outcome
+        ];
+        
+        setApiHistory(updatedHistory);
+        
+        // RECURSIVE CALL: Give outcome back to agent so it can decide what to do next
+        await callAgent(updatedHistory);
+
+      } else {
+         setMessages((prev) => [...prev, { id: Date.now().toString(), role: "agent", content: "Error: " + (data.error || "Unknown Error") }]);
+         setIsLoading(false);
+      }
+    } catch (err: any) {
+      setMessages((prev) => [...prev, { id: Date.now().toString(), role: "agent", content: "Koneksi ke otak agen gagal." }]);
+      setIsLoading(false);
+    }
+  };
+
   const handleSend = async () => {
     if (!input.trim()) return;
 
@@ -66,53 +206,10 @@ export default function Home() {
     setInput("");
     setIsLoading(true);
 
-    try {
-      const res = await fetch("/api/agent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: userMessage.content }),
-      });
-
-      const data = await res.json();
-
-      if (data.success) {
-        // Tampilkan draft di chat UI (hanya preview singkat)
-        const agentMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: "agent",
-          content: "Draft completed. Writing to document now...",
-          isWritingInfo: true
-        };
-        setMessages((prev) => [...prev, agentMessage]);
-
-        // Eksekusi Word.run
-        if (typeof window !== "undefined" && window.Word) {
-          await window.Word.run(async (context: any) => {
-            const body = context.document.body;
-            body.insertParagraph(data.draft, "End");
-            await context.sync();
-          });
-          
-          setMessages((prev) => [
-            ...prev,
-            { id: (Date.now() + 2).toString(), role: "agent", content: "Successfully wrote to your document!" }
-          ]);
-        } else {
-          console.warn("Word.run API not found. Showing draft here instead:");
-          setMessages((prev) => [
-            ...prev,
-            { id: (Date.now() + 2).toString(), role: "agent", content: data.draft }
-          ]);
-        }
-
-      } else {
-        setMessages((prev) => [...prev, { id: Date.now().toString(), role: "agent", content: "Error: " + data.error }]);
-      }
-    } catch (err: any) {
-      setMessages((prev) => [...prev, { id: Date.now().toString(), role: "agent", content: "Failed to connect to agent." }]);
-    } finally {
-      setIsLoading(false);
-    }
+    const updatedHistory = [...apiHistory, { role: "user", content: userMessage.content }];
+    setApiHistory(updatedHistory);
+    
+    await callAgent(updatedHistory);
   };
 
   return (

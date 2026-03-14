@@ -1,142 +1,107 @@
 import { NextResponse } from 'next/server';
-import { StateGraph, START, END, Annotation } from '@langchain/langgraph';
-import { makeOpenRouterRequest } from '@/lib/llm';
+import { makeOpenRouterChatRequest } from '@/lib/llm';
 import { searchOpenAlex } from '@/lib/openalex';
 
-// Define the state schema for our agent workflow
-const AgentState = Annotation.Root({
-  userPrompt: Annotation<string>(),
-  taskType: Annotation<"research" | "write" | "unknown">(),
-  researchQueries: Annotation<string[]>(),
-  researchData: Annotation<any[]>(),
-  finalDraft: Annotation<string>(),
-});
+const SYSTEM_PROMPT = `Anda adalah Spesialis Agen AI Otonom untuk Microsoft Word dengan Ketelitian Ekstra Tinggi (Exact Match Attention).
+Tujuan Anda adalah membantu pengguna menulis, meneliti, atau mengedit dokumen Word mereka secara cerdas.
 
-/**
- * MANAGER NODE: Analyzes the user prompt to determine the workflow path.
- */
-async function managerNode(state: typeof AgentState.State) {
-  console.log("--> MANAGER NODE EXECUTING");
-  const prompt = `You are the Manager Agent for a Word Add-in. 
-Your job is to analyze the user's request and determine if it requires scientific research/citations (taskType: "research") or just direct writing/formatting without research (taskType: "write").
-If "research", also provide 1-3 search queries for a database like OpenAlex.
-Output ONLY JSON in this format: 
-{ "taskType": "research" | "write", "researchQueries": ["query1", "query2"] }`;
+### DAFTAR ALAT (TOOLS) YANG TERSEDIA:
+1. 'read_document': Membaca seluruh teks yang ada di dalam dokumen Word saat ini. WAJIB dipanggil jika Anda disuruh merevisi/mengganti/menghapus bagian tertentu dari dokumen tapi belum tahu isi pastinya.
+   Format JSON: { "action": "read_document", "args": {} }
 
-  const responseJsonStr = await makeOpenRouterRequest(prompt, state.userPrompt);
-  
-  try {
-    // Attempt to parse JSON response. The LLM might wrap it in markdown block.
-    const cleanJsonStr = responseJsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
-    const result = JSON.parse(cleanJsonStr);
-    
-    return {
-      taskType: result.taskType || "write",
-      researchQueries: result.researchQueries || [],
-    };
-  } catch (error) {
-    console.log("Manager parse error, defaulting to write task");
-    return { taskType: "write", researchQueries: [] };
-  }
-}
+2. 'replace_text': MENGGANTI kalimat atau kata spesifik di dalam dokumen. 
+   Gunakan alat ini untuk merombak/mengedit kalimat lama BUKAN dengan 'edit_document'.
+   Format JSON: { "action": "replace_text", "args": { "old_text": "kalimat/kata persis yang ingin diganti (harus 100% sama kapitalisasinya)", "new_text": "kalimat/kata baru penggantinya" } }
 
-/**
- * RESEARCHER NODE: Calls OpenAlex API using queries determined by Manager.
- */
-async function researcherNode(state: typeof AgentState.State) {
-  console.log("--> RESEARCHER NODE EXECUTING");
-  const allData = [];
-  
-  if (state.researchQueries && state.researchQueries.length > 0) {
-    for (const q of state.researchQueries) {
-      const results = await searchOpenAlex(q, 2); // get top 2 per query
-      allData.push(...results);
-    }
-  }
+3. 'delete_text': MENGHAPUS kalimat atau kata spesifik dari dokumen.
+   Format JSON: { "action": "delete_text", "args": { "target_text": "kalimat persis yang ingin dihapus" } }
 
-  return {
-    researchData: allData
-  };
-}
+4. 'edit_document': MENAMBAHKAN teks baru murni di paling akhir (bawah) dokumen. JANGAN gunakan ini untuk merevisi.
+   Format JSON: { "action": "edit_document", "args": { "text": "Teks baru yang ditambahkan ke bawah" } }
 
-/**
- * WRITER NODE: Generates the final text or Word automation commands.
- */
-async function writerNode(state: typeof AgentState.State) {
-  console.log("--> WRITER NODE EXECUTING");
-  
-  let contextStr = "";
-  if (state.researchData && state.researchData.length > 0) {
-    contextStr = "\n\nUse the following research references as citations/bibliography:\n" + 
-      JSON.stringify(state.researchData, null, 2);
-  }
+5. 'search_openalex': Mencari jurnal akademik di database.
+   Format JSON: { "action": "search_openalex", "args": { "query": "kata kunci inggris" } }
 
-  const prompt = `You are an expert Writer Agent embedded in Microsoft Word.
-Your task is to fulfill the user's document generation request.
-${contextStr}
+6. 'finish': Selesai melakukan tugas dan mengirim pesan chat ke pengguna.
+   Format JSON: { "action": "finish", "args": { "message": "Pesan ringkas balasan ke user" } }
 
-Generate the final output exactly as the user requested. If there are citations, format them properly (e.g., APA). Include a References list at the bottom if research data was provided.
-Ensure the layout is professional. Use Markdown format for structure.`;
+### ATURAN SANGAT PENTING (BACA DENGAN TELITI):
+1. Anda HANYA diperbolehkan membalas dengan 1 objek JSON tulen tanpa teks markdown \`\`\`json.
+2. [ANTI HALUSINASI] Saat menggunakan 'replace_text', 'old_text' HARUS persis sama 100% (Literal Exact Match) dengan yang ada di hasil 'read_document'. Jangan menebak-nebak (misal di dokumen "Nanyan" jangan diubah jadi "Nanang").
+3. Saat user meminta penggantian kata (contoh: "Ganti nama Nanyan menjadi Budi"), Anda TIDAK PERLU menulis ulang seluruh dokumen. Cukup panggil 1x alat 'replace_text' dengan \`old_text: "Nanyan"\` dan \`new_text: "Budi"\`.
 
-  const finalDraft = await makeOpenRouterRequest(prompt, state.userPrompt);
-  
-  return {
-    finalDraft: finalDraft
-  };
-}
-
-// Map the next node after manager
-const determineNextNode = (state: typeof AgentState.State) => {
-  if (state.taskType === "research") {
-    return "researcher";
-  }
-  return "writer";
-};
-
-// Build the Graph
-const buildAgentGraph = () => {
-  const workflow = new StateGraph(AgentState)
-    .addNode("manager", managerNode)
-    .addNode("researcher", researcherNode)
-    .addNode("writer", writerNode)
-    
-    .addEdge(START, "manager")
-    .addConditionalEdges("manager", determineNextNode, {
-      researcher: "researcher",
-      writer: "writer",
-    })
-    .addEdge("researcher", "writer")
-    .addEdge("writer", END);
-
-  // Compile
-  const app = workflow.compile();
-  return app;
-};
-
+Contoh Pemanggilan Valid:
+{"action": "replace_text", "args": {"old_text": "Nanyan", "new_text": "Budi"}}`;
 
 export async function POST(req: Request) {
   try {
-    const { prompt } = await req.json();
-    if (!prompt) {
-      return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
+    const { messages } = await req.json();
+    if (!messages || !Array.isArray(messages)) {
+      return NextResponse.json({ error: "Messages array is required" }, { status: 400 });
     }
 
-    const app = buildAgentGraph();
+    // Suntikkan System Prompt ke awal percakapan
+    const fullMessages = [{ role: 'system', content: SYSTEM_PROMPT }, ...messages];
 
-    // Invoke workflow
-    const result = await app.invoke({
-      userPrompt: prompt,
-      taskType: "unknown",
-      researchQueries: [],
-      researchData: [],
-      finalDraft: ""
-    });
+    let loopCount = 0;
+    const MAX_LOOPS = 5; // Batasan agar AI tidak infinite loop
 
-    return NextResponse.json({
-      success: true,
-      draft: result.finalDraft,
-      researchCount: result.researchData?.length || 0
-    });
+    while(loopCount < MAX_LOOPS) {
+       console.log(`[AGENT LOOP ${loopCount + 1}] Memanggil LLM...`);
+       const llmResponse = await makeOpenRouterChatRequest(fullMessages);
+       
+       let actionObj;
+       try {
+          const cleanStr = llmResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+          actionObj = JSON.parse(cleanStr);
+       } catch(e) {
+          console.warn("[AGENT] Parsing JSON Gagal. Menyuruh LLM memperbaikinya...");
+          fullMessages.push({ role: 'assistant', content: llmResponse });
+          fullMessages.push({ role: 'user', content: 'SYSTEM ERROR: Respon Anda gagal di-parse. Anda HARUS membalas dengan objek JSON murni tanpa ada teks awalan/akhiran apa pun.' });
+          loopCount++;
+          continue;
+       }
+
+       const { action, args } = actionObj;
+       console.log(`[AGENT] Keputusan LLM -> Action: ${action}`);
+
+       // TOOL 1: FINISH (Langsung ke Chat User)
+       if (action === "finish") {
+          return NextResponse.json({ type: 'success', message: args.message });
+       }
+
+       // TOOL 2: SEARCH OPENALEX (Dieksekusi di Server)
+       if (action === "search_openalex") {
+          console.log(`[AGENT] Mengeksekusi pencarian OpenAlex untuk: ${args.query}`);
+          const results = await searchOpenAlex(args.query, 3);
+          
+          fullMessages.push({ role: 'assistant', content: JSON.stringify(actionObj) });
+          fullMessages.push({ role: 'user', content: `SYSTEM (TOOL RESULT - search_openalex):\n${JSON.stringify(results)}` });
+          
+          loopCount++;
+          continue; // Lanjut loop untuk membiarkan AI berpikir langkah selanjutnya
+       }
+
+       // TOOL 3 & 4: READ/EDIT/REPLACE/DELETE DOCUMENT (Dieksekusi di Klien / Webview Word)
+       if (["read_document", "edit_document", "replace_text", "delete_text"].includes(action)) {
+          console.log(`[AGENT] Meminta klien (Word) untuk mengeksekusi tool: ${action} dengan args:`, args);
+          // Kami mengembalikan kontrol (yield) ke klien Next.js UI agar dia menjalankan Office.js
+          return NextResponse.json({ 
+              type: 'action_required', 
+              tool: action, 
+              args: args, 
+              assistantLogs: JSON.stringify(actionObj) 
+          });
+       }
+       
+       // Fallback untuk action ngawur
+       fullMessages.push({ role: 'assistant', content: JSON.stringify(actionObj) });
+       fullMessages.push({ role: 'user', content: `SYSTEM ERROR: Action '${action}' tidak dikenal. Harap gunakan nama alat yang valid.` });
+       loopCount++;
+    }
+
+    return NextResponse.json({ type: 'success', message: "Maaf, daya komputasi agen habis sebelum tugas selesai (Mencapai batas maksimum siklus kognitif)." });
+
   } catch (error: any) {
     console.error("Agent Workflow Error:", error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
