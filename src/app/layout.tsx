@@ -25,6 +25,22 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {/* Polyfill history.replaceState for older Office Webviews that lack it */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if (typeof window !== 'undefined' && (!window.history || !window.history.replaceState)) {
+                window.history = window.history || {};
+                window.history.replaceState = function() {};
+                window.history.pushState = function() {};
+              }
+            `,
+          }}
+        />
+        {/* Office.js must be loaded first */}
+        <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
