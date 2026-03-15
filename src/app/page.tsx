@@ -169,6 +169,77 @@ export default function Home() {
            } else {
              toolResult = "SUCCESS (Simulated Delete)";
            }
+
+        } else if (tool === 'read_document_outline') {
+           setMessages((prev) => [...prev, { id: Date.now().toString(), role: "agent", content: "📑 *Membaca daftar isi dokumen Anda...*", isWritingInfo: true }]);
+           
+           if (typeof window !== "undefined" && window.Word) {
+             await window.Word.run(async (context: any) => {
+               // Ambil hanya paragraf yang merupakan "Heading" (Judul Bab dsb)
+               const paragraphs = context.document.body.paragraphs;
+               context.load(paragraphs, 'style, text');
+               await context.sync();
+               
+               let outline = "";
+               paragraphs.items.forEach((p: any) => {
+                 if (p.style.includes("Heading")) {
+                   outline += `- [${p.style}] ${p.text}\n`;
+                 }
+               });
+               toolResult = outline || "[Dokumen tidak memiliki struktur Heading yang terdeteksi. Harap gunakan read_document semua jika ini dokumen pendek.]";
+             });
+           } else {
+             toolResult = "[Simulated Outline]";
+           }
+           
+        } else if (tool === 'search_keyword_in_doc') {
+           setMessages((prev) => [...prev, { id: Date.now().toString(), role: "agent", content: `🔍 *Mencari lokasi kata '${args.keyword}'...*`, isWritingInfo: true }]);
+           
+           if (typeof window !== "undefined" && window.Word) {
+             await window.Word.run(async (context: any) => {
+               const searchResults = context.document.body.search(args.keyword, { matchCase: false });
+               context.load(searchResults, 'text'); // Load the text of the found range
+               // Untuk ngasih "konteks", kita idealnya harus tau paragraf di sekitarnya. 
+               // Sebagai jalan pintas cepat, Word.js bisa mengekspansi *range* pencarian ke level paragraf:
+               
+               await context.sync();
+               
+               if (searchResults.items.length === 0) {
+                 toolResult = `Kata '${args.keyword}' tidak ditemukan di seluruh dokumen.`;
+               } else {
+                 let contextSnippets = "";
+                 for (let i = 0; i < Math.min(searchResults.items.length, 5); i++) { // Limit max 5 ctx
+                    const expandedRange = searchResults.items[i].expandTo(context.document.body.paragraphs.getFirst()); // Hackish way for context
+                    context.load(expandedRange, 'text');
+                 }
+                 await context.sync();
+                 toolResult = `Ditemukan ${searchResults.items.length} kemunculan (Maks 5 cuplikan konteks terlampir kalau bisa). Silakan pake tool lain jika kurang.`;
+               }
+             });
+           } else {
+             toolResult = "[Simulated Search]";
+           }
+
+        } else if (tool === 'execute_office_js') {
+           setMessages((prev) => [...prev, { id: Date.now().toString(), role: "agent", content: "⚡ *Mengeksekusi skrip dinamis / God Mode...*", isWritingInfo: true }]);
+           
+           if (typeof window !== "undefined" && window.Word) {
+             try {
+                // EXTREMELY POWERFUL: Menjalankan Javascript Word API racikan AI secara mentah.
+                await window.Word.run(async (context: any) => {
+                   const body = context.document.body; // Ekspos body ke eval scope
+                   // eslint-disable-next-line no-eval
+                   eval(`(async () => { ${args.script} })()`);
+                   await context.sync();
+                });
+                toolResult = "SUCCESS: Skrip Word_JS Anda berhasil dieksekusi tanpa error.";
+             } catch (e: any) {
+                console.error("Execute Script Error:", e);
+                toolResult = `ERROR Eksekusi Skrip: ${e.message}. Silakan perbaiki sintaks Office.js Anda. Ingat objek utamanya adalah 'context' dan 'body'.`;
+             }
+           } else {
+             toolResult = "[Simulated Script Exec]";
+           }
         }
 
         // Attach tool result to conversation history for next Agent loop

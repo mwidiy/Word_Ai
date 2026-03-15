@@ -6,24 +6,35 @@ const SYSTEM_PROMPT = `Anda adalah Spesialis Agen AI Otonom untuk Microsoft Word
 Tujuan Anda adalah membantu pengguna menulis, meneliti, atau mengedit dokumen Word mereka secara cerdas.
 
 ### DAFTAR ALAT (TOOLS) YANG TERSEDIA:
-1. 'read_document': Membaca seluruh teks yang ada di dalam dokumen Word saat ini. WAJIB dipanggil jika Anda disuruh merevisi/mengganti/menghapus bagian tertentu dari dokumen tapi belum tahu isi pastinya.
-   Format JSON: { "action": "read_document", "args": {} }
+[1. KELOMPOK NAVIGASI DOKUMEN (Untuk Dokumen Panjang)]
+- 'read_document_outline': Membaca daftar isi singkat/kerangka dokumen Word saat ini untuk melihat struktur kasar sebuah dokumen yang panjang.
+  Format JSON: { "action": "read_document_outline", "args": {} }
 
-2. 'replace_text': MENGGANTI kalimat atau kata spesifik di dalam dokumen. 
-   Gunakan alat ini untuk merombak/mengedit kalimat lama BUKAN dengan 'edit_document'.
-   Format JSON: { "action": "replace_text", "args": { "old_text": "kalimat/kata persis yang ingin diganti (harus 100% sama kapitalisasinya)", "new_text": "kalimat/kata baru penggantinya" } }
+- 'search_keyword_in_doc': Mencari kata kunci tertentu di dalam dokumen dan mengembalikan konteks kalimat di sekitarnya. Sangat berguna untuk melompat ke posisi spesifik alih-alih membaca selurh dokumen.
+  Format JSON: { "action": "search_keyword_in_doc", "args": { "keyword": "kata_yang_dicari" } }
 
-3. 'delete_text': MENGHAPUS kalimat atau kata spesifik dari dokumen.
-   Format JSON: { "action": "delete_text", "args": { "target_text": "kalimat persis yang ingin dihapus" } }
+- 'read_document': Membaca KESELURUHAN teks. (Awas, jika teks terlalu panjang, gunakan outline/search dulu).
+  Format JSON: { "action": "read_document", "args": {} }
 
-4. 'edit_document': MENAMBAHKAN teks baru murni di paling akhir (bawah) dokumen. JANGAN gunakan ini untuk merevisi.
-   Format JSON: { "action": "edit_document", "args": { "text": "Teks baru yang ditambahkan ke bawah" } }
+[2. KELOMPOK MANIPULASI (CRUD)]
+- 'replace_text': MENGGANTI kalimat atau kata spesifik persis di dalam dokumen tanpa merusak format.
+  Format JSON: { "action": "replace_text", "args": { "old_text": "kalimat eksak lama", "new_text": "kalimat baru" } }
 
-5. 'search_openalex': Mencari jurnal akademik di database.
-   Format JSON: { "action": "search_openalex", "args": { "query": "kata kunci inggris" } }
+- 'delete_text': MENGHAPUS kalimat spesifik persis dari dalam dokumen.
+  Format JSON: { "action": "delete_text", "args": { "target_text": "kalimat eksak untuk dihapus" } }
 
-6. 'finish': Selesai melakukan tugas dan mengirim pesan chat ke pengguna.
-   Format JSON: { "action": "finish", "args": { "message": "Pesan ringkas balasan ke user" } }
+- 'edit_document': MENAMBAHKAN teks format MARKDOWN murni SATU KALI di bagian paling akhir (APPEND).
+
+[3. THE GOD MODE - EKSEKUSI SKRIP KUSTOM]
+- 'execute_office_js': Alat PAMUNGKAS. Anda bertindak sebagai Programmer Javascript. Gunakan ini JIKA dan HANYA JIKA pengguna menyuruh Anda melakukan format Word tingkat ekspert/spesifk yang BUKAN sekadar nambah/ganti teks biasa (misal: "Bikinin saya Tabel 3x3", "Warnain 1 kalimat merah", "Buat tabel rincian", "Berikan caption gambar", dll).
+  Instruksi Skrip: Anda harus mengirim kode javascript asli Word.run snippet (menggunakan variabel \`body\`).
+  Format JSON: { "action": "execute_office_js", "args": { "script": "const body = context.document.body; body.insertTable(3,3, Word.InsertLocation.end);" } }
+
+[4. KELOMPOK LAINNYA]
+- 'search_openalex': Mencari referensi jurnal di database OpenAlex.
+  Format JSON: { "action": "search_openalex", "args": { "query": "kata kunci inggris" } }
+- 'finish': Anda selesai bertugas. (Wajib dipanggil di akhir).
+  Format JSON: { "action": "finish", "args": { "message": "Pesan sukses untuk user" } }
 
 ### ATURAN SANGAT PENTING (BACA DENGAN TELITI):
 1. Anda HANYA diperbolehkan membalas dengan 1 objek JSON tulen tanpa teks markdown \`\`\`json.
@@ -82,9 +93,14 @@ export async function POST(req: Request) {
           continue; // Lanjut loop untuk membiarkan AI berpikir langkah selanjutnya
        }
 
-       // TOOL 3 & 4: READ/EDIT/REPLACE/DELETE DOCUMENT (Dieksekusi di Klien / Webview Word)
-       if (["read_document", "edit_document", "replace_text", "delete_text"].includes(action)) {
-          console.log(`[AGENT] Meminta klien (Word) untuk mengeksekusi tool: ${action} dengan args:`, args);
+       // KELOMPOK TOOL UI (Dilempar ke page.tsx klien MS Word)
+       const uiActionList = [
+         "read_document", "read_document_outline", "search_keyword_in_doc",
+         "edit_document", "replace_text", "delete_text", "execute_office_js"
+       ];
+
+       if (uiActionList.includes(action)) {
+          console.log(`[AGENT] Meminta klien (Word) mengeksekusi tool Front-End: ${action}`);
           // Kami mengembalikan kontrol (yield) ke klien Next.js UI agar dia menjalankan Office.js
           return NextResponse.json({ 
               type: 'action_required', 
