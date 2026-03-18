@@ -3,27 +3,35 @@ let apiKeys: string[] = [];
 
 function loadKeys() {
   if (apiKeys.length > 0) return;
-  
-  // Trik membaca process.env agar tidak di-hardcode/dihapus oleh Next.js Webpack saat proses Build
-  const envObj: Record<string, any> = typeof process !== 'undefined' ? process['env'] : {};
-  
-  // Deteksi semua variabel tanpa peduli indeks/angka urutannya (apikey1, apikey3, APIKEY13, dll)
-  for (const key of Object.keys(envObj)) {
-    if (key.toLowerCase().startsWith('apikey')) {
-      const val = envObj[key];
-      if (val && typeof val === 'string' && val.trim() !== '') {
-        apiKeys.push(val.trim());
-      }
+
+  // TRIK PAMUNGKAS: Next.js Webpack SANGAT agresif memblokir akses process.env dinamis.
+  // Satu-satunya cara agar variabel Vercel 100% terbaca adalah dengan menuliskannya secara EKSPLISIT.
+  const potentialKeys = [
+    process.env.apikey1, process.env.apikey2, process.env.apikey3, process.env.apikey4, process.env.apikey5,
+    process.env.apikey6, process.env.apikey7, process.env.apikey8, process.env.apikey9, process.env.apikey10,
+    process.env.apikey11, process.env.apikey12, process.env.apikey13, process.env.apikey14, process.env.apikey15,
+    process.env.apikey16, process.env.apikey17, process.env.apikey18, process.env.apikey19, process.env.apikey20,
+    process.env.apikey21, process.env.apikey22, process.env.apikey23, process.env.apikey24, process.env.apikey25,
+    process.env.apikey26, process.env.apikey27, process.env.apikey28, process.env.apikey29, process.env.apikey30
+  ];
+
+  for (const key of potentialKeys) {
+    if (key && typeof key === 'string' && key.trim() !== '') {
+      apiKeys.push(key.trim());
     }
   }
 
-  // Jika entah kenapa Object.keys gagal, gunakan fallback loop statis yang lebih banyak
+  // Fallback uppercase jika user menulis APIKEY di Vercel
   if (apiKeys.length === 0) {
-    for (let i = 1; i <= 50; i++) {
-      const k1 = envObj[`apikey${i}`];
-      const k2 = envObj[`APIKEY${i}`];
-      const val = k1 || k2;
-      if (val) apiKeys.push(val);
+    const uppercaseKeys = [
+      process.env.APIKEY1, process.env.APIKEY2, process.env.APIKEY3, process.env.APIKEY4, process.env.APIKEY5,
+      process.env.APIKEY6, process.env.APIKEY7, process.env.APIKEY8, process.env.APIKEY9, process.env.APIKEY10,
+      process.env.APIKEY11, process.env.APIKEY12, process.env.APIKEY13, process.env.APIKEY14, process.env.APIKEY15
+    ];
+    for (const key of uppercaseKeys) {
+      if (key && typeof key === 'string' && key.trim() !== '') {
+        apiKeys.push(key.trim());
+      }
     }
   }
 }
