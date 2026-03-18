@@ -1,10 +1,6 @@
-import fs from 'fs';
-import path from 'path';
-
 // Parse .env to get apikey1, apikey2, etc.
 let apiKeys: string[] = [];
 
-// Fallback logic to read from process.env if available
 function loadKeys() {
   if (apiKeys.length > 0) return;
   for (let i = 1; i <= 10; i++) {
