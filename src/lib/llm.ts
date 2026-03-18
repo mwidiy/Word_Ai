@@ -1,14 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 
-// Parse .env to get api26 - api55
+// Parse .env to get apikey1, apikey2, etc.
 let apiKeys: string[] = [];
 
 // Fallback logic to read from process.env if available
 function loadKeys() {
   if (apiKeys.length > 0) return;
-  for (let i = 26; i <= 55; i++) {
-    const key = process.env[`api${i}`];
+  for (let i = 1; i <= 10; i++) {
+    const key = process.env[`apikey${i}`];
     if (key) {
       apiKeys.push(key);
     }
@@ -33,7 +33,7 @@ export function getNextApiKey(): string {
 /**
  * Make a request to OpenRouter using round-robin and auto-retry
  */
-export async function makeOpenRouterRequest(systemPrompt: string, userMessage: string, model: string = "openrouter/free") {
+export async function makeOpenRouterRequest(systemPrompt: string, userMessage: string, model: string = "deepseek-ai/DeepSeek-V3.2") {
     loadKeys();
     if (apiKeys.length === 0) {
         throw new Error("No API keys found in environment.");
@@ -46,13 +46,11 @@ export async function makeOpenRouterRequest(systemPrompt: string, userMessage: s
     while (attempts < maxAttempts) {
         const apiKey = getNextApiKey();
         try {
-            const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            const response = await fetch("https://api.friendli.ai/serverless/v1/chat/completions", {
                 method: "POST",
                 headers: {
                     "Authorization": `Bearer ${apiKey}`,
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:3000",
-                    "X-Title": "Word Agent"
+                    "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
                     model: model,
@@ -88,7 +86,7 @@ export async function makeOpenRouterRequest(systemPrompt: string, userMessage: s
 /**
  * Make a request to OpenRouter using full conversation history
  */
-export async function makeOpenRouterChatRequest(messages: any[], model: string = "openrouter/free") {
+export async function makeOpenRouterChatRequest(messages: any[], model: string = "deepseek-ai/DeepSeek-V3.2") {
     loadKeys();
     if (apiKeys.length === 0) {
         throw new Error("No API keys found in environment.");
@@ -101,13 +99,11 @@ export async function makeOpenRouterChatRequest(messages: any[], model: string =
     while (attempts < maxAttempts) {
         const apiKey = getNextApiKey();
         try {
-            const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+            const response = await fetch("https://api.friendli.ai/serverless/v1/chat/completions", {
                 method: "POST",
                 headers: {
                     "Authorization": `Bearer ${apiKey}`,
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:3000",
-                    "X-Title": "Word Agent"
+                    "Content-Type": "application/json"
                 },
                 body: JSON.stringify({
                     model: model,
