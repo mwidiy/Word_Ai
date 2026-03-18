@@ -3,7 +3,7 @@ let apiKeys: string[] = [];
 
 function loadKeys() {
   if (apiKeys.length > 0) return;
-  for (let i = 1; i <= 10; i++) {
+  for (let i = 1; i <= 50; i++) {
     const key = process.env[`apikey${i}`];
     if (key) {
       apiKeys.push(key);
@@ -35,7 +35,7 @@ export async function makeOpenRouterRequest(systemPrompt: string, userMessage: s
         throw new Error("No API keys found in environment.");
     }
 
-    const maxAttempts = Math.min(8, apiKeys.length); // Coba maksimal 8 key berbeda sebelum menyerah
+    const maxAttempts = apiKeys.length; // Coba seluruh key berbeda sebelum menyerah
     let attempts = 0;
     let lastError = "";
 
@@ -88,7 +88,7 @@ export async function makeOpenRouterChatRequest(messages: any[], model: string =
         throw new Error("No API keys found in environment.");
     }
 
-    const maxAttempts = Math.min(8, apiKeys.length);
+    const maxAttempts = apiKeys.length; // Coba seluruh key berbeda sebelum menyerah
     let attempts = 0;
     let lastError = "";
 
