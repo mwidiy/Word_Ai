@@ -474,6 +474,104 @@ export default function Home() {
            }
 
         // =====================================================
+        // TOOL: insert_page_numbers (OOXML Power)
+        // =====================================================
+                 } else if (tool === 'insert_page_numbers') {
+            setMessages((prev) => [...prev, { id: Date.now().toString(), role: "agent", content: `🔢 *Menyisipkan nomor halaman otomatis (Robust Mode)...*`, isWritingInfo: true }]);
+            
+            if (typeof window !== "undefined" && window.Word) {
+              try {
+                await window.Word.run(async (context: any) => {
+                  const sections = context.document.sections;
+                  sections.load("items");
+                  await context.sync();
+                  
+                  const location = args.location || "Bottom"; 
+                  const alignment = args.alignment || "Center";
+                  const alignMap: Record<string, string> = { "Left": "left", "Center": "center", "Right": "right" };
+                  const xmlAlign = alignMap[alignment] || "center";
+
+                  const ooxml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><?mso-application progid="Word.Document"?><pkg:package xmlns:pkg="http://schemas.microsoft.com/office/2006/xmlPackage"><pkg:part pkg:name="/_rels/.rels" pkg:contentType="application/vnd.openxmlformats-package.relationships+xml" pkg:padding="512"><pkg:xmlData><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships></pkg:xmlData></pkg:part><pkg:part pkg:name="/word/document.xml" pkg:contentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"><pkg:xmlData><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:jc w:val="${xmlAlign}"/></w:pPr><w:fldSimple w:fld=" PAGE "/></w:p></w:body></w:document></pkg:xmlData></pkg:part></pkg:package>`;
+
+                  for (let i = 0; i < sections.items.length; i++) {
+                    const section = sections.items[i];
+                    let hf = (location === "Top") ? section.getHeader("Primary") : section.getFooter("Primary");
+                    
+                    try {
+                      // Attempt 1: Standard OOXML Replace
+                      hf.body.getRange().insertOoxml(ooxml, "Replace");
+                    } catch (innerError) {
+                      console.warn("OOXML Insert failed, trying Fallback Body Clear...", innerError);
+                      // Fallback: Clear and insert at end
+                      hf.body.clear();
+                      hf.body.insertOoxml(ooxml, "End");
+                    }
+                  }
+                  
+                  await context.sync();
+                  toolResult = `SUCCESS: Nomor halaman (${location}, ${alignment}) aktif. Harap cek dokumen.`;
+                });
+              } catch (e: any) {
+                console.error("Page Numbering Tool Failure:", e);
+                // JANGAN hanya kasih error mentah, tapi kasih instruksi biar Agen gak nyerah
+                toolResult = `ERROR: Gagal menyisipkan nomor halaman otomatis. Pesan: ${e.message}. SARAN: Gunakan tool 'execute_office_js' untuk mencoba menyisipkan teks manual ke Footer.`;
+              }
+            } else {
+              toolResult = "SUCCESS (Simulated)";
+            }
+
+         // =====================================================
+         // TOOL: insert_toc (Smart Table of Contents)
+         // =====================================================
+         } else if (tool === 'insert_toc') {
+            setMessages((prev) => [...prev, { id: Date.now().toString(), role: "agent", content: `📋 *Menyisipkan Daftar Isi otomatis...*`, isWritingInfo: true }]);
+            
+            if (typeof window !== "undefined" && window.Word) {
+              try {
+                await window.Word.run(async (context: any) => {
+                  const body = context.document.body;
+                  const paragraphs = body.paragraphs;
+                  context.load(paragraphs, 'text, style');
+                  await context.sync();
+                  
+                  let targetIndex = -1;
+                  for (let i = 0; i < paragraphs.items.length; i++) {
+                    const txt = paragraphs.items[i].text.toUpperCase();
+                    if (txt.includes("BAB 1") || txt.includes("BAB I") || txt.includes("PENDAHULUAN")) {
+                      targetIndex = i;
+                      break;
+                    }
+                  }
+
+                  let insertRange;
+                  if (targetIndex !== -1) {
+                    insertRange = paragraphs.items[targetIndex].getRange("Before");
+                  } else {
+                    insertRange = body.getRange("Start");
+                  }
+
+                  // Gunakan insertHtml agar gaya Heading 1 lebih pasti nempel dan dikenali TOC
+                  const titleHtml = '<h1 style="font-family: \'Times New Roman\'; font-size: 14pt; text-align: center;">DAFTAR ISI</h1>';
+                  insertRange.insertHtml(titleHtml, "Before");
+                  
+                  // Penting: API ini akan menyisipkan TOC yang memindai seluruh dokumen untuk gaya Heading
+                  context.document.insertTableOfContents(); 
+                  
+                  // Kasih Page Break SEBELUM isi skripsi (setelah TOC area)
+                  insertRange.insertBreak("Page", "Before");
+
+                  await context.sync();
+                  toolResult = `SUCCESS: Daftar Isi otomatis berhasil disisipkan ${targetIndex !== -1 ? 'sebelum Pendahuluan' : 'di awal dokumen'}. Silakan scroll ke atas untuk melihat hasilnya.`;
+                });
+              } catch (e: any) {
+                console.error("TOC Error:", e);
+                toolResult = `ERROR Word API (insert_toc): ${e.message}`;
+              }
+            } else {
+              toolResult = "SUCCESS (Simulated TOC)";
+            }
+
+        // =====================================================
         // TOOL TIDAK DIKENAL
         // =====================================================
         } else {
@@ -536,7 +634,13 @@ export default function Home() {
       <header className="px-6 py-5 border-b border-slate-800 bg-slate-900/50 backdrop-blur-md flex items-center justify-between z-10">
         <div className="flex items-center gap-3">
           <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 shadow-lg shadow-indigo-500/30 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-white"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-white">
+              <path d="M5 5h14" />
+              <path d="M7 5v8" />
+              <path d="M17 5v8" />
+              <circle cx="12" cy="11" r="3" />
+              <path d="M8 17c0-2.5 8-2.5 8 0v2H8v-2z" />
+            </svg>
           </div>
           <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-300">
             Word Agent

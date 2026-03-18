@@ -46,6 +46,14 @@ const SYSTEM_PROMPT = `Anda adalah Asisten AI untuk Microsoft Word. Tugas Anda a
 - 'append_bibliography': Menambahkan Daftar Pustaka di akhir dokumen (APA Style).
   Format JSON: { "action": "append_bibliography", "args": { "references": ["Penulis, A. (2024). Judul. Jurnal, 1(1), 1-10."] } }
 
+- 'insert_toc': Membuat Daftar Isi otomatis (Table of Contents) secara cerdas sebelum seksi Pendahuluan/Bab 1.
+  Format JSON: { "action": "insert_toc", "args": {} }
+
+- 'insert_page_numbers': Menambahkan nomor halaman otomatis (1, 2, 3...) ke Footer/Header.
+  Format JSON: { "action": "insert_page_numbers", "args": { "location": "Bottom", "alignment": "Center" } }
+  - Argument 'location': "Bottom" (default) atau "Top".
+  - Argument 'alignment': "Left", "Center" (default), "Right".
+
 [4. SKRIP KUSTOM]
 - 'execute_office_js': Menulis kode JavaScript Office.js untuk format Word yang kompleks (tabel, warna, dll).
   Format JSON: { "action": "execute_office_js", "args": { "script": "const table = body.insertTable(3,3, 'End'); table.values = [['A','B','C']]; await context.sync();" } }
@@ -241,7 +249,7 @@ export async function POST(req: Request) {
        const uiActionList = [
          "read_document", "read_document_outline", "search_keyword_in_doc",
          "edit_document", "replace_text", "delete_text", "replace_section_content",
-         "execute_office_js", "insert_equation", "append_bibliography"
+         "execute_office_js", "insert_equation", "append_bibliography", "insert_page_numbers", "insert_toc"
        ];
 
        if (uiActionList.includes(action)) {
