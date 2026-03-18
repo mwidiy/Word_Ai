@@ -3,10 +3,27 @@ let apiKeys: string[] = [];
 
 function loadKeys() {
   if (apiKeys.length > 0) return;
-  for (let i = 1; i <= 50; i++) {
-    const key = process.env[`apikey${i}`];
-    if (key) {
-      apiKeys.push(key);
+  
+  // Trik membaca process.env agar tidak di-hardcode/dihapus oleh Next.js Webpack saat proses Build
+  const envObj: Record<string, any> = typeof process !== 'undefined' ? process['env'] : {};
+  
+  // Deteksi semua variabel tanpa peduli indeks/angka urutannya (apikey1, apikey3, APIKEY13, dll)
+  for (const key of Object.keys(envObj)) {
+    if (key.toLowerCase().startsWith('apikey')) {
+      const val = envObj[key];
+      if (val && typeof val === 'string' && val.trim() !== '') {
+        apiKeys.push(val.trim());
+      }
+    }
+  }
+
+  // Jika entah kenapa Object.keys gagal, gunakan fallback loop statis yang lebih banyak
+  if (apiKeys.length === 0) {
+    for (let i = 1; i <= 50; i++) {
+      const k1 = envObj[`apikey${i}`];
+      const k2 = envObj[`APIKEY${i}`];
+      const val = k1 || k2;
+      if (val) apiKeys.push(val);
     }
   }
 }
