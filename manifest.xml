@@ -21,12 +21,12 @@
   <Description DefaultValue="A powerful AI Agent for Microsoft Word"/>
   
   <!-- Icon for your add-in. Used on installation screens and the add-ins dialog. -->
-  <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png" />
-  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png" />
+  <IconUrl DefaultValue="https://word-ai-sigma.vercel.app/assets/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://word-ai-sigma.vercel.app/assets/icon-64.png" />
 
-  <SupportUrl DefaultValue="https://localhost:3000" />
+  <SupportUrl DefaultValue="https://word-ai-sigma.vercel.app" />
   <AppDomains>
-    <AppDomain>https://localhost:3000</AppDomain>
+    <AppDomain>https://word-ai-sigma.vercel.app</AppDomain>
   </AppDomains>
 
   <!-- Domains that will be allowed when navigating. For example, if you use ShowDialog and have not configured an AppDomain. -->
@@ -35,7 +35,7 @@
   </Hosts>
   
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://localhost:3000" />
+    <SourceLocation DefaultValue="https://word-ai-sigma.vercel.app" />
   </DefaultSettings>
 
   <Permissions>ReadWriteDocument</Permissions>
@@ -96,14 +96,14 @@
 
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://localhost:3000/assets/icon-16.png"/>
-        <bt:Image id="Icon.32x32" DefaultValue="https://localhost:3000/assets/icon-32.png"/>
-        <bt:Image id="Icon.80x80" DefaultValue="https://localhost:3000/assets/icon-80.png"/>
+        <bt:Image id="Icon.16x16" DefaultValue="https://word-ai-sigma.vercel.app/assets/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://word-ai-sigma.vercel.app/assets/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://word-ai-sigma.vercel.app/assets/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
         <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://go.microsoft.com/fwlink/?LinkId=276812" />
-        <bt:Url id="Commands.Url" DefaultValue="https://localhost:3000" />
-        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000" />
+        <bt:Url id="Commands.Url" DefaultValue="https://word-ai-sigma.vercel.app" />
+        <bt:Url id="Taskpane.Url" DefaultValue="https://word-ai-sigma.vercel.app" />
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="Get started with your sample add-in!" />
