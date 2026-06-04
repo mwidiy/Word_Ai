@@ -51,23 +51,21 @@ export function getNextApiKey(): string {
   return key;
 }
 
-/**
- * Make a request to OpenRouter using round-robin and auto-retry
- */
-export async function makeOpenRouterRequest(systemPrompt: string, userMessage: string, model: string = "deepseek-ai/DeepSeek-V3.2") {
+export async function makeOpenRouterChatRequest(messages: any[], model: string = "agt_BxcRatEWzVYH2yRNtyWynn") {
     loadKeys();
     if (apiKeys.length === 0) {
         throw new Error("No API keys found in environment.");
     }
 
-    const maxAttempts = apiKeys.length; // Coba seluruh key berbeda sebelum menyerah
+    const maxAttempts = apiKeys.length;
     let attempts = 0;
     let lastError = "";
 
     while (attempts < maxAttempts) {
         const apiKey = getNextApiKey();
         try {
-            const response = await fetch("https://api.friendli.ai/serverless/v1/chat/completions", {
+            // Step 1: Initiate the response
+            const response = await fetch("https://api.upstage.ai/v2/responses", {
                 method: "POST",
                 headers: {
                     "Authorization": `Bearer ${apiKey}`,
@@ -75,24 +73,50 @@ export async function makeOpenRouterRequest(systemPrompt: string, userMessage: s
                 },
                 body: JSON.stringify({
                     model: model,
-                    messages: [
-                        { role: "system", content: systemPrompt },
-                        { role: "user", content: userMessage }
-                    ]
+                    include: ["last"],
+                    input: messages
                 })
             });
 
             const data = await response.json();
             
-            if (response.ok && data.choices && data.choices.length > 0) {
-                return data.choices[0].message.content || "[Empty Response]";
+            if (!response.ok) {
+                const errorMsg = data.error ? data.error.message : response.statusText;
+                throw new Error(`HTTP ${response.status}: ${errorMsg}`);
+            }
+
+            let respId = data.id;
+            let status = data.status;
+
+            // Step 2: Poll until completed
+            while (status === "queued" || status === "in_progress") {
+                // Wait 2 seconds
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                const pollResp = await fetch(`https://api.upstage.ai/v2/responses/${respId}?include=last`, {
+                    headers: {
+                        "Authorization": `Bearer ${apiKey}`
+                    }
+                });
+                
+                const pollData = await pollResp.json();
+                
+                if (!pollResp.ok) {
+                    const errorMsg = pollData.error ? pollData.error.message : pollResp.statusText;
+                    throw new Error(`Polling HTTP ${pollResp.status}: ${errorMsg}`);
+                }
+                
+                status = pollData.status;
+                
+                if (status === "completed") {
+                    return pollData.output_text || "[Empty Response]";
+                }
+                if (status === "failed") {
+                    throw new Error(`Upstage API processing failed: ${JSON.stringify(pollData)}`);
+                }
             }
             
-            // Jika error dari OpenRouter (misal 401, 429)
-            const errorMsg = data.error ? data.error.message : response.statusText;
-            console.warn(`[WARN] API Key berawalan ${apiKey.substring(0, 12)} gagal. Status: ${response.status} - ${errorMsg}. Mencoba key selanjutnya...`);
-            lastError = `HTTP ${response.status}: ${errorMsg}`;
-            attempts++;
+            throw new Error(`Upstage API stopped with status: ${status}`);
             
         } catch (err: any) {
             console.warn(`[WARN] Fetch error: ${err.message}. Mencoba key selanjutnya...`);
@@ -105,50 +129,11 @@ export async function makeOpenRouterRequest(systemPrompt: string, userMessage: s
 }
 
 /**
- * Make a request to OpenRouter using full conversation history
+ * Make a request to OpenRouter (now Upstage) using round-robin and auto-retry
  */
-export async function makeOpenRouterChatRequest(messages: any[], model: string = "deepseek-ai/DeepSeek-V3.2") {
-    loadKeys();
-    if (apiKeys.length === 0) {
-        throw new Error("No API keys found in environment.");
-    }
-
-    const maxAttempts = apiKeys.length; // Coba seluruh key berbeda sebelum menyerah
-    let attempts = 0;
-    let lastError = "";
-
-    while (attempts < maxAttempts) {
-        const apiKey = getNextApiKey();
-        try {
-            const response = await fetch("https://api.friendli.ai/serverless/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${apiKey}`,
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    model: model,
-                    messages: messages
-                })
-            });
-
-            const data = await response.json();
-            
-            if (response.ok && data.choices && data.choices.length > 0) {
-                return data.choices[0].message.content || "[Empty Response]";
-            }
-            
-            const errorMsg = data.error ? data.error.message : response.statusText;
-            console.warn(`[WARN] API Key berawalan ${apiKey.substring(0, 12)} gagal. Status: ${response.status} - ${errorMsg}.`);
-            lastError = `HTTP ${response.status}: ${errorMsg}`;
-            attempts++;
-            
-        } catch (err: any) {
-            console.warn(`[WARN] Fetch error: ${err.message}.`);
-            lastError = err.message;
-            attempts++;
-        }
-    }
-    
-    throw new Error(`Semua ${maxAttempts} percobaan API Key gagal. Error terakhir: ${lastError}`);
+export async function makeOpenRouterRequest(systemPrompt: string, userMessage: string, model: string = "agt_BxcRatEWzVYH2yRNtyWynn") {
+    return makeOpenRouterChatRequest([
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessage }
+    ], model);
 }
