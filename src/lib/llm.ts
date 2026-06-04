@@ -61,9 +61,32 @@ export async function makeOpenRouterChatRequest(messages: any[], model: string =
     let attempts = 0;
     let lastError = "";
 
+    // Merge system messages into the first user message
+    // because Upstage agent models do not support the 'system' role
+    const processedMessages: any[] = [];
+    let systemPromptAccumulator = "";
+
+    for (const msg of messages) {
+        if (msg.role === "system") {
+            systemPromptAccumulator += msg.content + "\n\n";
+        } else if (msg.role === "user") {
+            if (systemPromptAccumulator) {
+                processedMessages.push({
+                    role: "user",
+                    content: systemPromptAccumulator + msg.content
+                });
+                systemPromptAccumulator = ""; // Clear accumulator after merging
+            } else {
+                processedMessages.push(msg);
+            }
+        } else {
+            processedMessages.push(msg);
+        }
+    }
+
     // Upstage agent models expect 'content' to be a list of objects.
     // If we have a string content, we must wrap it using 'input_text' type.
-    const formattedMessages = messages.map(msg => {
+    const formattedMessages = processedMessages.map(msg => {
         if (typeof msg.content === 'string') {
             return {
                 role: msg.role,
