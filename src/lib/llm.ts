@@ -62,13 +62,13 @@ export async function makeOpenRouterChatRequest(messages: any[], model: string =
     let lastError = "";
 
     // Upstage agent models expect 'content' to be a list of objects.
-    // If we have a string content, we must wrap it.
+    // If we have a string content, we must wrap it using 'input_text' type.
     const formattedMessages = messages.map(msg => {
         if (typeof msg.content === 'string') {
             return {
                 role: msg.role,
                 content: [
-                    { type: "text", text: msg.content }
+                    { type: "input_text", text: msg.content }
                 ]
             };
         }
