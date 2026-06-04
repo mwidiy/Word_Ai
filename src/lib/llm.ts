@@ -61,6 +61,20 @@ export async function makeOpenRouterChatRequest(messages: any[], model: string =
     let attempts = 0;
     let lastError = "";
 
+    // Upstage agent models expect 'content' to be a list of objects.
+    // If we have a string content, we must wrap it.
+    const formattedMessages = messages.map(msg => {
+        if (typeof msg.content === 'string') {
+            return {
+                role: msg.role,
+                content: [
+                    { type: "text", text: msg.content }
+                ]
+            };
+        }
+        return msg;
+    });
+
     while (attempts < maxAttempts) {
         const apiKey = getNextApiKey();
         try {
@@ -74,7 +88,7 @@ export async function makeOpenRouterChatRequest(messages: any[], model: string =
                 body: JSON.stringify({
                     model: model,
                     include: ["last"],
-                    input: messages
+                    input: formattedMessages
                 })
             });
 
